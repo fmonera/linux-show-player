@@ -323,18 +323,80 @@ class CueActionDelegate(EnumComboBoxDelegate):
         return editor
 
 
-class CueSelectionDelegate(LabelDelegate):
+class CueSelectionDelegate(LineEditDelegate):
     def __init__(self, cue_model, cue_select_dialog, **kwargs):
         super().__init__(**kwargs)
         self.cue_model = cue_model
         self.cue_select = cue_select_dialog
 
-    def _text(self, option, index):
-        cue = self.cue_model.get(index.data())
-        if cue is not None:
-            return f"{cue.index+1} | {cue.name}"
+    def createEditor(self, parent, option, index):
+        editor = super().createEditor(parent, option, index)
+        # Conectar la señal editingFinished
+        editor.editingFinished.connect(lambda: self.commitData.emit(editor))
+        # Instalar filtro de eventos para manejar Enter
+        editor.installEventFilter(self)
+        return editor
 
-        return "UNDEF"
+    def paint(self, painter, option, index):
+        # Mantener el formato de visualización original
+        self.initStyleOption(option, index)
+        option.rect.adjust(4, 0, -4, 0)
+
+        cue = self.cue_model.get(index.data())
+        text = f"{cue.index+1} | {cue.name}" if cue is not None else "UNDEF"
+        text = option.fontMetrics.elidedText(text, Qt.ElideRight, option.rect.width())
+
+        painter.save()
+
+        if option.state & QStyle.State_Selected:
+            painter.setBrush(option.palette.highlight())
+            pen = painter.pen()
+            pen.setBrush(option.palette.highlightedText())
+            painter.setPen(pen)
+
+        painter.drawText(option.rect, option.displayAlignment, text)
+        painter.restore()
+
+    def setEditorData(self, editor, index):
+        # Mostrar solo el ID en el editor
+        value = str(index.data())
+        editor.setText(value)
+
+    def setModelData(self, editor, model, index):
+        try:
+            # Obtener la posición deseada (el número que ingresó el usuario)
+            desired_position = int(editor.text().strip()) - 1  # Restamos 1 porque internamente los índices empiezan en 0
+            
+            # Buscar la cue que tiene esa posición
+            target_cue = None
+            for cue in self.cue_model:
+                if cue.index == desired_position:
+                    target_cue = cue
+                    break
+            
+            if target_cue is not None:
+                # Actualizar el modelo con el ID de la cue encontrada
+                if model.setData(index, target_cue.id, Qt.EditRole):
+                    model.setData(index, target_cue.__class__, CueClassRole)
+                    return
+            
+            # Si no se encontró la cue o falló la actualización, restaurar el valor anterior
+            old_value = index.data(Qt.EditRole)
+            editor.setText(str(old_value))
+            
+        except ValueError:
+            # Si hay error de conversión, restaurar el valor anterior
+            old_value = index.data(Qt.EditRole)
+            editor.setText(str(old_value))
+
+    def eventFilter(self, editor, event):
+        if event.type() == QEvent.KeyPress:
+            if event.key() in (Qt.Key_Enter, Qt.Key_Return):
+                # Confirmar y cerrar el editor
+                self.commitData.emit(editor)
+                self.closeEditor.emit(editor)
+                return True
+        return super().eventFilter(editor, event)
 
     def editorEvent(self, event, model, option, index):
         if event.type() == QEvent.MouseButtonDblClick:
