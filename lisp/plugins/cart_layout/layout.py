@@ -421,6 +421,10 @@ class CartLayout(CueLayout):
         current_page = self._cart_view.currentWidget()
         cue_widget = current_page.widgetAt(current_page.mapFromGlobal(position))
 
+        # If there is no widget, return instead of crashing
+        if cue_widget is None:
+            return
+
         if cue_widget.selected:
             # If the context menu is requested from a selected cue-widget
             cues = list(self.selected_cues())
